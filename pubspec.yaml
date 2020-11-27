@@ -1,4 +1,4 @@
-name: render
+name: renderman
 dependencies:
   shelf: ^0.7.9
   puppeteer: ^1.22.0
@@ -7,3 +7,4 @@ dependencies:
   sprintf: ^5.0.0
   crypto: ^2.1.5
   dcache: ^0.3.0
+  pedantic: ^1.0.0
