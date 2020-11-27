@@ -1,0 +1,7 @@
+.local-chromium
+.packages
+.env
+.dart_tool
+.DS_Store
+docker-compose.yaml
+tmp
