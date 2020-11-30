@@ -12,7 +12,7 @@ bool isAssetRequest(String uri) {
 
 bool isBotRequest(String agent) {
   RegExp exp = new RegExp(
-      r"(googlebot|bingbot|yandex|twitterbot|facebookexternalhit|linkedinbot|embedly|pinterest\/0\.|pinterestbot|slackbot|whatsapp|curl)");
+      r"(googlebot|bingbot|yandex|twitterbot|facebookexternalhit|linkedinbot|embedly|pinterest\/0\.|pinterestbot|slackbot|whatsapp|curl|Slack-ImgProxy|Slack)");
 
   return exp.hasMatch(agent);
 }
