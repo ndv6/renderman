@@ -1,46 +1,39 @@
 FROM golang:alpine as go
 WORKDIR /workspace
 COPY go* /workspace/
-COPY remote/ /workspace/
-RUN go build -o chrome-launcher .
-
-FROM google/dart as dart
-WORKDIR /workspace
-COPY pubspec.yaml .
-RUN dart pub get
-COPY . .
-RUN dart pub get --offline
-RUN dart compile exe proxy/main.dart -o /workspace/app
+COPY remote    /workspace/remote
+COPY collector /workspace/collector
+COPY renderman /workspace/renderman
+RUN go build -o /workspace/bin/chrome-launcher ./remote
+RUN go build -o /workspace/bin/collector ./collector
+RUN go build -o /workspace/bin/renderman ./renderman
 
 FROM alpine
-RUN apk add --no-cache supervisor chromium tzdata dumb-init
-
-COPY --from=dart /lib64/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2
-COPY --from=dart /lib/x86_64-linux-gnu/libdl.so.2 /lib/x86_64-linux-gnu/libdl.so.2
-COPY --from=dart /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libc.so.6
-COPY --from=dart /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/libm.so.6
-COPY --from=dart /lib/x86_64-linux-gnu/librt.so.1 /lib/x86_64-linux-gnu/librt.so.1
-COPY --from=dart /lib/x86_64-linux-gnu/libpthread.so.0 /lib/x86_64-linux-gnu/libpthread.so.0
-COPY --from=dart /etc/hosts /etc/hosts
-COPY --from=dart /etc/nsswitch.conf /etc/nsswitch.conf
-COPY --from=dart /etc/resolv.conf /etc/resolv.conf
-COPY --from=dart /lib/x86_64-linux-gnu/libnss_dns.so.2 /lib/x86_64-linux-gnu/libnss_dns.so.2
-COPY --from=dart /lib/x86_64-linux-gnu/libresolv.so.2 /lib/x86_64-linux-gnu/libresolv.so.2
-COPY --from=dart /usr/share/ca-certificates /usr/share/ca-certificates
-COPY --from=dart /etc/ssl/certs /etc/ssl/certs
+RUN apk add --no-cache supervisor chromium tzdata nginx gettext libintl dumb-init
 
 WORKDIR /workspace
 
-COPY --from=go   /workspace/chrome-launcher /workspace/chrome-launcher
-COPY --from=dart /workspace/app /workspace/app
-COPY supervisord.conf /etc/supervisor/supervisord.conf
+COPY --from=go   /workspace/bin/chrome-launcher /workspace/chrome-launcher
+COPY --from=go   /workspace/bin/collector /workspace/collector
+COPY --from=go   /workspace/bin/renderman /workspace/renderman
 
-RUN mkdir /var/run/supervisor \
+# COPY --from=dart /workspace/app /workspace/app
+COPY supervisord.conf /etc/supervisor/supervisord.conf
+COPY nginx.conf /etc/nginx/conf.d/default.conf.template
+RUN echo "pid        /var/run/nginx/nginx.pid;" >> /etc/nginx/nginx.conf
+RUN cat /etc/nginx/nginx.conf
+
+RUN mkdir /var/run/supervisor && mkdir /var/run/nginx \
+    && mkdir -p /var/log/nginx \
     && adduser -D renderman \
     && chown -R renderman:renderman /workspace \
-    && chown -R renderman:renderman /var/run/supervisor
+    && chown -R renderman:renderman /var/run/supervisor \
+    && chown -R renderman:renderman /var/run/nginx \
+    && chown -R renderman:renderman /var/lib/nginx \
+    && chown -R renderman:renderman /var/log/nginx \
+    && chown -R renderman:renderman /etc/nginx/conf.d/default.conf
 
 USER renderman
-EXPOSE 8081 9222
+EXPOSE 8081 9090 9222
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]

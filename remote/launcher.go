@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 
 	"github.com/go-rod/rod/lib/utils"
 )
@@ -16,6 +17,8 @@ var quiet = flag.Bool("quiet", false, "silent the log")
 
 // a cli tool to launch browser remotely
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+
 	flag.Parse()
 
 	rl := NewRemoteLauncher()
