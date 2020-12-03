@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
@@ -10,6 +9,7 @@ import (
 	"github.com/gocolly/colly/v2"
 	"github.com/joho/godotenv"
 	"github.com/robfig/cron/v3"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -23,17 +23,21 @@ func main() {
 	if os.Getenv("COLLECTOR_ENABLE") == "true" {
 		cron := cron.New()
 
-		fmt.Println("collector agent is enabled")
-		// c.Visit(uri)
+		logrus.Info("collector agent is enabled")
 
-		cron.AddFunc("* * * * *", func() {
-			fmt.Print("cront start ", time.Now())
+		scheduler := os.Getenv("COLLECTOR_SCHEDULER")
+		if scheduler == "" {
+			scheduler = "0 */6 * * *"
+		}
+
+		cron.AddFunc(scheduler, func() {
+			logrus.Info("cront start at ", time.Now())
 			collect(uri)
 		})
 
 		collect(uri)
 		go func() {
-			fmt.Println("start cron")
+			logrus.Info("start cron scheduler")
 			cron.Start()
 		}()
 
@@ -42,7 +46,7 @@ func main() {
 		<-sig
 
 	} else {
-		fmt.Println("collector agent is disabled")
+		logrus.Info("collector agent is disabled")
 	}
 }
 
@@ -52,7 +56,7 @@ func collect(uri string) {
 		e.Request.Visit(e.Attr("href"))
 	})
 	c.OnRequest(func(r *colly.Request) {
-		fmt.Println("collector:", r.URL)
+		logrus.Info("collector:", r.URL)
 	})
 
 	c.Visit(uri)
