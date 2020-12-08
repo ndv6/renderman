@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"strings"
 
 	"github.com/chromedp/cdproto/cdp"
@@ -11,6 +14,9 @@ import (
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
+	"github.com/sirupsen/logrus"
 )
 
 var skippedResource = []string{
@@ -22,36 +28,79 @@ var skippedResource = []string{
 	"service-worker",
 }
 
-// ChromeRemote ...
-type ChromeRemote struct {
-	RemoteURL string
+// Remote ...
+type Remote struct {
+	RemoteURL  string
+	BackendURL string
 }
 
 // Content ...
 type Content struct {
 	Title   string
 	Content string
+	Header  http.Header
 }
 
+// Marshal ...
 func (c *Content) Marshal() string {
 	content, err := json.Marshal(c)
 	if err != nil {
-		fmt.Println(err)
+		logrus.Error(err)
 		return ""
 	}
 
 	return string(content)
 }
 
+// UnMarshal ...
 func (c *Content) UnMarshal(val []byte) {
 	err := json.Unmarshal(val, c)
 	if err != nil {
-		fmt.Println(err)
+		logrus.Error(err)
 	}
 }
 
+// Proxy is for serve as proxy
+func (rt *Remote) Proxy(c echo.Context) {
+	uri, err := url.Parse(rt.BackendURL)
+	if err != nil {
+		logrus.Error(err)
+	}
+
+	config := middleware.ProxyConfig{
+		Skipper:    middleware.DefaultSkipper,
+		ContextKey: "target",
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(uri)
+	proxy.ErrorHandler = func(resp http.ResponseWriter, req *http.Request, err error) {
+		desc := uri.String()
+		c.Set("_error", echo.NewHTTPError(http.StatusBadGateway, fmt.Sprintf("remote %s unreachable, could not forward: %v", desc, err)))
+		logrus.Error(err)
+	}
+	proxy.Transport = config.Transport
+	proxy.ModifyResponse = config.ModifyResponse
+
+	req := c.Request()
+	res := c.Response()
+
+	req.URL.Host = uri.Host
+	req.URL.Scheme = uri.Scheme
+	req.Header.Set("X-Forwarded-Host", req.Header.Get("Host"))
+	req.Host = uri.Host
+
+	if req.Header.Get(echo.HeaderXRealIP) == "" || c.Echo().IPExtractor != nil {
+		req.Header.Set(echo.HeaderXRealIP, c.RealIP())
+	}
+	if req.Header.Get(echo.HeaderXForwardedProto) == "" {
+		req.Header.Set(echo.HeaderXForwardedProto, c.Scheme())
+	}
+
+	proxy.ServeHTTP(res, req)
+}
+
 // FetchHeadless ...
-func (c *ChromeRemote) FetchHeadless(url string) (Content, error) {
+func (rt *Remote) FetchHeadless(url string) (Content, error) {
 	var (
 		title    string
 		content  string
@@ -59,8 +108,8 @@ func (c *ChromeRemote) FetchHeadless(url string) (Content, error) {
 		cancel   context.CancelFunc
 	)
 
-	if c.RemoteURL != "" {
-		allocCtx, cancel = chromedp.NewRemoteAllocator(context.Background(), c.RemoteURL)
+	if rt.RemoteURL != "" {
+		allocCtx, cancel = chromedp.NewRemoteAllocator(context.Background(), rt.RemoteURL)
 		defer cancel()
 	} else {
 		opts := append(chromedp.DefaultExecAllocatorOptions[:],
