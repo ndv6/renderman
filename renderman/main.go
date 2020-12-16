@@ -18,6 +18,7 @@ import (
 )
 
 var hc *Remote
+var enableStaticFile = false
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
@@ -28,6 +29,10 @@ func main() {
 	hc = &Remote{
 		RemoteURL:  os.Getenv("CHROMIUM_URL"),
 		BackendURL: os.Getenv("BACKEND_URL"),
+	}
+
+	if os.Getenv("ENABLE_STATIC_SERVE") != "" {
+		enableStaticFile = true
 	}
 
 	// Middleware
@@ -56,7 +61,7 @@ func httpHandler(ctx echo.Context) error {
 	uri := fmt.Sprintf("%s%s", os.Getenv("BACKEND_URL"), ctx.Request().URL)
 	hash := fmt.Sprintf("%x", md5.Sum([]byte(uri)))
 
-	bot := `googlebot|bingbot|yandex|baiduspider|twitterbot|facebookexternalhit|rogerbot|linkedinbot|embedly|quora link preview|showyoubot|outbrain|pinterest\/0\.|pinterestbot|slackbot|vkShare|W3C_Validator|whatsapp|collector-agent`
+	bot := `googlebot|bingbot|yandex|baiduspider|twitterbot|facebookexternalhit|rogerbot|linkedinbot|embedly|quora link preview|showyoubot|outbrain|pinterest\/0\.|pinterestbot|slackbot|Slack-ImgProxy|Slackbot-LinkExpanding|vkShare|W3C_Validator|whatsapp|collector-agent`
 	matched, _ := regexp.Match(bot, []byte(ctx.Request().Header.Get("user-agent")))
 	if matched == true {
 		renderman = true
@@ -68,29 +73,36 @@ func httpHandler(ctx echo.Context) error {
 		renderman = false
 	}
 
-	if renderman == true {
-		c := Content{}
-		ctn := cache.Get(hash)
-		if ctn != nil {
-			c.UnMarshal([]byte(fmt.Sprintf("%s", ctn)))
-
-			// if user agent is not collector-agent then we can return from cache
-			if ctx.Request().Header.Get("user-agent") != "collector-agent" {
-				return ctx.HTML(http.StatusOK, c.Content)
-			}
+	if enableStaticFile == true {
+		if renderman == true {
+			return fetchAndCacheHeadless(ctx, uri, hash)
 		}
-
-		c, err := hc.FetchHeadless(uri)
-		if err != nil {
-			logrus.Error(err)
-			return ctx.HTML(http.StatusInternalServerError, "")
-		}
-
-		// cache
-		cache.Set(hash, c.Marshal(), cache.OneDay)
-		return ctx.HTML(http.StatusOK, c.Content)
+		hc.Proxy(ctx)
+		return nil
 	}
 
-	hc.Proxy(ctx)
-	return nil
+	return fetchAndCacheHeadless(ctx, uri, hash)
+}
+
+func fetchAndCacheHeadless(ctx echo.Context, uri, hash string) error {
+	c := Content{}
+	ctn := cache.Get(hash)
+	if ctn != nil {
+		c.UnMarshal([]byte(fmt.Sprintf("%s", ctn)))
+
+		// if user agent is not collector-agent then we can return from cache
+		if ctx.Request().Header.Get("user-agent") != "collector-agent" {
+			return ctx.HTML(http.StatusOK, c.Content)
+		}
+	}
+
+	c, err := hc.FetchHeadless(uri)
+	if err != nil {
+		logrus.Error(err)
+		return ctx.HTML(http.StatusInternalServerError, "")
+	}
+
+	// cache
+	cache.Set(hash, c.Marshal(), cache.OneDay)
+	return ctx.HTML(http.StatusOK, c.Content)
 }
