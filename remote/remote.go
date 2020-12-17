@@ -42,6 +42,7 @@ func newLauncher() *launcher.Launcher {
 	l.Set("disable-accelerated-2d-canvas")
 	l.Set("disable-gpu")
 	l.Set("disable-notifications")
+	l.Set("rod-keep-user-data-dir")
 
 	return l
 }
