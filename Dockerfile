@@ -19,9 +19,8 @@ COPY --from=go   /workspace/bin/renderman /workspace/renderman
 
 # COPY --from=dart /workspace/app /workspace/app
 COPY supervisord.conf /etc/supervisor/supervisord.conf
-COPY nginx.conf /etc/nginx/conf.d/default.conf.template
-RUN echo "pid        /var/run/nginx/nginx.pid;" >> /etc/nginx/nginx.conf
-RUN cat /etc/nginx/nginx.conf
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY default.conf /etc/nginx/conf.d/default.conf.template
 
 RUN mkdir /var/run/supervisor && mkdir /var/run/nginx \
     && mkdir -p /var/log/nginx \
@@ -32,6 +31,10 @@ RUN mkdir /var/run/supervisor && mkdir /var/run/nginx \
     && chown -R renderman:renderman /var/lib/nginx \
     && chown -R renderman:renderman /var/log/nginx \
     && chown -R renderman:renderman /etc/nginx/conf.d/default.conf
+
+# forward request and error logs to docker log collector
+RUN ln -sf /dev/stdout /var/log/nginx/access.log \
+    && ln -sf /dev/stderr /var/log/nginx/error.log
 
 USER renderman
 EXPOSE 8081 9090 9222
