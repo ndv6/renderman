@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"github.com/gookit/cache"
 	"github.com/gookit/cache/redis"
@@ -57,23 +58,24 @@ func main() {
 }
 
 func httpHandler(ctx echo.Context) error {
-	renderman := false
 	uri := fmt.Sprintf("%s%s", os.Getenv("BACKEND_URL"), ctx.Request().URL)
 	hash := fmt.Sprintf("%x", md5.Sum([]byte(uri)))
 
-	bot := `googlebot|bingbot|yandex|baiduspider|twitterbot|facebookexternalhit|rogerbot|linkedinbot|embedly|quora link preview|showyoubot|outbrain|pinterest\/0\.|pinterestbot|slackbot|Slack-ImgProxy|Slackbot-LinkExpanding|vkShare|W3C_Validator|whatsapp|collector-agent`
-	matched, _ := regexp.Match(bot, []byte(ctx.Request().Header.Get("user-agent")))
-	if matched == true {
-		renderman = true
-	}
-
-	asset := `\.(js|css|xml|less|png|jpg|jpeg|gif|pdf|doc|txt|ico|rss|zip|mp3|rar|exe|wmv|doc|avi|ppt|mpg|mpeg|tif|wav|mov|psd|ai|xls|mp4|m4a|swf|dat|dmg|iso|flv|m4v|torrent|ttf|woff|svg|eot)`
-	matched, _ = regexp.Match(asset, []byte(uri))
-	if matched == true {
-		renderman = false
-	}
-
 	if enableStaticFile == true {
+		renderman := false
+
+		bot := `googlebot|bingbot|yandex|baiduspider|twitterbot|facebookexternalhit|rogerbot|linkedinbot|embedly|quora link preview|showyoubot|outbrain|pinterest\/0\.|pinterestbot|slackbot|Slack-ImgProxy|Slackbot-LinkExpanding|vkShare|W3C_Validator|whatsapp|collector-agent`
+		matched, _ := regexp.Match(bot, []byte(ctx.Request().Header.Get("user-agent")))
+		if matched == true {
+			renderman = true
+		}
+
+		asset := `\.(js|css|xml|less|png|jpg|jpeg|gif|pdf|doc|txt|ico|rss|zip|mp3|rar|exe|wmv|doc|avi|ppt|mpg|mpeg|tif|wav|mov|psd|ai|xls|mp4|m4a|swf|dat|dmg|iso|flv|m4v|torrent|ttf|woff|svg|eot)`
+		matched, _ = regexp.Match(asset, []byte(uri))
+		if matched == true {
+			renderman = false
+		}
+
 		if renderman == true {
 			return fetchAndCacheHeadless(ctx, uri, hash)
 		}
@@ -101,6 +103,9 @@ func fetchAndCacheHeadless(ctx echo.Context, uri, hash string) error {
 		logrus.Error(err)
 		return ctx.HTML(http.StatusInternalServerError, "")
 	}
+
+	// replace backend_url to app_url
+	c.Content = strings.ReplaceAll(c.Content, os.Getenv("BACKEND_URL"), os.Getenv("APP_URL"))
 
 	// cache
 	cache.Set(hash, c.Marshal(), cache.OneDay)
