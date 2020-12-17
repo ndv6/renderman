@@ -14,7 +14,7 @@ import (
 
 func main() {
 	// delay collector before main app start
-	time.Sleep(5 * time.Second)
+	time.Sleep(2 * time.Minute)
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	godotenv.Load()
