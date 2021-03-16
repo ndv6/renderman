@@ -20,10 +20,12 @@ import (
 
 var hc *Remote
 var enableStaticFile = false
+var bot = `googlebot|bingbot|adidxBot|yandex|baiduspider|twitterbot|facebookexternalhit|rogerbot|linkedinbot|embedly|quora link preview|showyoubot|outbrain|pinterest\/0\.|pinterestbot|slackbot|slack-imgproxy|vkshare|w3c_validator|whatsapp|collector-agent`
+var asset = `\.(js|css|xml|less|png|jpg|jpeg|gif|pdf|doc|txt|ico|rss|zip|mp3|rar|exe|wmv|doc|avi|ppt|mpg|mpeg|tif|wav|mov|psd|ai|xls|mp4|m4a|swf|dat|dmg|iso|flv|m4v|torrent|ttf|woff|svg|eot)`
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	godotenv.Load()
+	_ = godotenv.Load()
 
 	// Echo instance
 	e := echo.New()
@@ -32,9 +34,7 @@ func main() {
 		BackendURL: os.Getenv("BACKEND_URL"),
 	}
 
-	if os.Getenv("ENABLE_STATIC_SERVE") != "" {
-		enableStaticFile = true
-	}
+	enableStaticFile = os.Getenv("ENABLE_STATIC_SERVE") != ""
 
 	// Middleware
 	e.Use(middleware.Logger())
@@ -61,22 +61,15 @@ func httpHandler(ctx echo.Context) error {
 	uri := fmt.Sprintf("%s%s", os.Getenv("BACKEND_URL"), ctx.Request().URL)
 	hash := fmt.Sprintf("%x", md5.Sum([]byte(uri)))
 
-	if enableStaticFile == true {
-		renderman := false
-
-		bot := `googlebot|bingbot|yandex|baiduspider|twitterbot|facebookexternalhit|rogerbot|linkedinbot|embedly|quora link preview|showyoubot|outbrain|pinterest\/0\.|pinterestbot|slackbot|Slack-ImgProxy|Slackbot-LinkExpanding|vkShare|W3C_Validator|whatsapp|collector-agent`
-		matched, _ := regexp.Match(bot, []byte(ctx.Request().Header.Get("user-agent")))
-		if matched == true {
-			renderman = true
+	if enableStaticFile {
+		userAgent := strings.ToLower(ctx.Request().Header.Get("user-agent"))
+		matched, _ := regexp.Match(bot, []byte(userAgent))
+		if matched {
+			return fetchAndCacheHeadless(ctx, uri, hash)
 		}
 
-		asset := `\.(js|css|xml|less|png|jpg|jpeg|gif|pdf|doc|txt|ico|rss|zip|mp3|rar|exe|wmv|doc|avi|ppt|mpg|mpeg|tif|wav|mov|psd|ai|xls|mp4|m4a|swf|dat|dmg|iso|flv|m4v|torrent|ttf|woff|svg|eot)`
 		matched, _ = regexp.Match(asset, []byte(uri))
-		if matched == true {
-			renderman = false
-		}
-
-		if renderman == true {
+		if !matched {
 			return fetchAndCacheHeadless(ctx, uri, hash)
 		}
 		hc.Proxy(ctx)
@@ -103,11 +96,10 @@ func fetchAndCacheHeadless(ctx echo.Context, uri, hash string) error {
 		logrus.Error(err)
 		return ctx.HTML(http.StatusInternalServerError, "")
 	}
-
 	// replace backend_url to app_url
 	c.Content = strings.ReplaceAll(c.Content, os.Getenv("BACKEND_URL"), os.Getenv("APP_URL"))
 
 	// cache
-	cache.Set(hash, c.Marshal(), cache.OneDay)
+	_ = cache.Set(hash, c.Marshal(), cache.OneDay)
 	return ctx.HTML(http.StatusOK, c.Content)
 }
