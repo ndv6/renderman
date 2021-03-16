@@ -15,6 +15,8 @@ const flagKeepUserDataDir = "rod-keep-user-data-dir"
 // RemoteLauncher ...
 type RemoteLauncher struct {
 	Logger utils.Logger
+	l      *launcher.Launcher
+	rp     *httputil.ReverseProxy
 }
 
 // NewRemoteLauncher instance
@@ -33,6 +35,22 @@ func (p *RemoteLauncher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.defaults(w, r)
 }
 
+func (p *RemoteLauncher) setup() {
+	p.l = newLauncher()
+	u := p.l.Leakless(true).MustLaunch()
+	parsedURL, err := url.Parse(u)
+	utils.E(err)
+	p.rp = httputil.NewSingleHostReverseProxy(toHTTP(*parsedURL))
+}
+
+func (p *RemoteLauncher) cleanup() {
+	if _, has := p.l.Get(flagKeepUserDataDir); !has {
+		p.l.Cleanup()
+		dir, _ := p.l.Get("user-data-dir")
+		p.Logger.Println("Removed", dir)
+	}
+}
+
 func newLauncher() *launcher.Launcher {
 	l := launcher.New()
 	l.Set("disable-web-security")
@@ -48,42 +66,16 @@ func newLauncher() *launcher.Launcher {
 }
 
 func (p *RemoteLauncher) defaults(w http.ResponseWriter, _ *http.Request) {
-	l := newLauncher()
-	utils.E(w.Write(l.JSON()))
+	utils.E(w.Write(p.l.JSON()))
 }
 
 func (p *RemoteLauncher) launch(w http.ResponseWriter, r *http.Request) {
-	l := newLauncher()
-
 	options := r.Header.Get(launcher.HeaderName)
 	if options != "" {
-		l.Flags = nil
-		utils.E(json.Unmarshal([]byte(options), l))
+		p.l.Flags = nil
+		utils.E(json.Unmarshal([]byte(options), p.l))
 	}
-
-	u := l.Leakless(false).MustLaunch()
-	defer func() {
-		l.Kill()
-		p.Logger.Println("Killed PID:", l.PID())
-
-		if _, has := l.Get(flagKeepUserDataDir); !has {
-			l.Cleanup()
-			dir, _ := l.Get("user-data-dir")
-			p.Logger.Println("Removed", dir)
-		}
-	}()
-
-	parsedURL, err := url.Parse(u)
-	utils.E(err)
-
-	p.Logger.Println("Launch", u, l.FormatArgs())
-	defer p.Logger.Println("Close", u)
-
-	parsedWS, err := url.Parse(u)
-	utils.E(err)
-	parsedURL.Path = parsedWS.Path
-
-	httputil.NewSingleHostReverseProxy(toHTTP(*parsedURL)).ServeHTTP(w, r)
+	p.rp.ServeHTTP(w, r)
 }
 
 func toHTTP(u url.URL) *url.URL {
