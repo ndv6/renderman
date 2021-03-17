@@ -1,0 +1,48 @@
+trigger:
+- refs/tags/*
+
+resources:
+  repositories:
+  - repository: ndv6
+    type: github
+    endpoint: ndv6
+    name: ndv6/azure-pipelines
+    ref: refs/heads/master
+
+variables:
+  service_name: renderman
+  slack_channel: api_deployment
+
+stages:
+- stage: preparation
+  jobs:
+  - template: job--notification.yaml@ndv6
+    parameters:
+      name: ${{ variables.service_name }}
+      status: starting
+
+- stage: deploy
+  jobs:
+  - template: job--docker.yaml@ndv6
+    parameters:
+      name: ${{ variables.service_name }}
+  - template: job--notification.yaml@ndv6
+    parameters:
+      name: ${{ variables.service_name }}
+      status: failed
+      condition: failed()
+      dependsOn:
+      - docker_job
+
+- stage: post
+  jobs:
+  - template: job--notification.yaml@ndv6
+    parameters:
+      name: ${{ variables.service_name }}
+      status: success
+      condition: succeeded()
+  - template: job--notification.yaml@ndv6
+    parameters:
+      name: ${{ variables.service_name }}
+      status: failed
+      condition: failed()
