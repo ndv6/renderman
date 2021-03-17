@@ -22,6 +22,8 @@ func main() {
 	flag.Parse()
 
 	rl := NewRemoteLauncher()
+	rl.setup()
+	defer rl.cleanup()
 	if !*quiet {
 		rl.Logger = log.New(os.Stdout, "", 0)
 	}
