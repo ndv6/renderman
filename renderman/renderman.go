@@ -49,8 +49,12 @@ func (c *Content) Marshal() string {
 		logrus.Error(err)
 		return ""
 	}
-
 	return string(content)
+}
+
+func (c *Content) Compress() []byte {
+	str := c.Marshal()
+
 }
 
 // UnMarshal ...
