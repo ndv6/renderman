@@ -17,11 +17,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var hc *Remote
-var enableStaticFile = false
-var bot = `googlebot|bingbot|adidxBot|yandex|baiduspider|twitterbot|facebookexternalhit|rogerbot|linkedinbot|embedly|quora link preview|showyoubot|outbrain|pinterest\/0\.|pinterestbot|slackbot|slack-imgproxy|vkshare|w3c_validator|whatsapp|collector-agent`
-var asset = `\.(js|css|xml|less|png|jpg|jpeg|gif|pdf|doc|txt|ico|rss|zip|mp3|rar|exe|wmv|doc|avi|ppt|mpg|mpeg|tif|wav|mov|psd|ai|xls|mp4|m4a|swf|dat|dmg|iso|flv|m4v|torrent|ttf|woff|svg|eot)`
-var appURL string
+var (
+	hc               *Remote
+	enableStaticFile = false
+	bot              = `googlebot|bingbot|adidxBot|yandex|baiduspider|twitterbot|facebookexternalhit|rogerbot|linkedinbot|embedly|quora link preview|showyoubot|outbrain|pinterest\/0\.|pinterestbot|slackbot|slack-imgproxy|vkshare|w3c_validator|whatsapp|collector-agent`
+	asset            = `\.(js|css|xml|less|png|jpg|jpeg|gif|pdf|doc|txt|ico|rss|zip|mp3|rar|exe|wmv|doc|avi|ppt|mpg|mpeg|tif|wav|mov|psd|ai|xls|mp4|m4a|swf|dat|dmg|iso|flv|m4v|torrent|ttf|woff|svg|eot)`
+	hashName         string
+	compressr        compressor
+)
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
@@ -33,9 +36,10 @@ func main() {
 		RemoteURL:  os.Getenv("CHROMIUM_URL"),
 		BackendURL: os.Getenv("BACKEND_URL"),
 	}
+	compressr = newZstdCompressor()
 
 	enableStaticFile = os.Getenv("ENABLE_STATIC_SERVE") != ""
-	appURL = os.Getenv("APP_URL")
+	hashName = strings.ReplaceAll(os.Getenv("APP_URL"), ":", "")
 
 	// Middleware
 	e.Use(middleware.Logger())
@@ -60,40 +64,38 @@ func main() {
 
 func httpHandler(ctx echo.Context) error {
 	uri := fmt.Sprintf("%s%s", os.Getenv("BACKEND_URL"), ctx.Request().URL)
-	hash := fmt.Sprintf("%x", md5.Sum([]byte(uri)))
 
 	if enableStaticFile {
 		userAgent := strings.ToLower(ctx.Request().Header.Get("user-agent"))
 		matched, _ := regexp.Match(bot, []byte(userAgent))
 		if matched {
-			fmt.Println("=====fetchAndCacheHeadless====:68", uri)
-			return fetchAndCacheHeadless(ctx, uri, hash)
+			return fetchAndCacheHeadless(ctx, uri)
 		}
 
 		matched, _ = regexp.Match(asset, []byte(uri))
 		if !matched {
-			fmt.Println("=====fetchAndCacheHeadless====:74", uri)
-			return fetchAndCacheHeadless(ctx, uri, hash)
+			return fetchAndCacheHeadless(ctx, uri)
 		}
-		fmt.Println("=====proxy====:77", uri)
 		hc.Proxy(ctx)
 		return nil
 	}
 
-	fmt.Println("=====fetchAndCacheHeadless====:82", uri)
-	return fetchAndCacheHeadless(ctx, uri, hash)
+	return fetchAndCacheHeadless(ctx, uri)
 }
 
-func fetchAndCacheHeadless(ctx echo.Context, uri, hash string) error {
+func fetchAndCacheHeadless(ctx echo.Context, uri string) error {
+	hash := fmt.Sprintf("%x", md5.Sum([]byte(uri)))
 	c := Content{}
-	fmt.Println("====user-agent====", ctx.Request().Header.Get("user-agent"))
-	key := fmt.Sprintf("%s:%s", appURL, hash)
-	fmt.Println("====key", key)
+	key := fmt.Sprintf("%s:%s", hashName, hash)
 	ctn := cache.Get(key)
-	fmt.Println("====ctn == nil", ctn == nil)
 	if ctn != nil {
-		c.UnMarshal([]byte(fmt.Sprintf("%s", ctn)))
-
+		byts := ctn.([]byte)
+		byts, err := compressr.Decompress(byts)
+		if err != nil {
+			logrus.Error(err)
+			return ctx.HTML(http.StatusInternalServerError, "")
+		}
+		c.UnMarshal(byts)
 		// if user agent is not collector-agent then we can return from cache
 		if ctx.Request().Header.Get("user-agent") != "collector-agent" {
 			return ctx.HTML(http.StatusOK, c.Content)
@@ -105,12 +107,12 @@ func fetchAndCacheHeadless(ctx echo.Context, uri, hash string) error {
 		logrus.Error(err)
 		return ctx.HTML(http.StatusInternalServerError, "")
 	}
-	fmt.Println("======c=====", c.Header, c.Title, c.Content)
 	// replace backend_url to app_url
 	c.Content = strings.ReplaceAll(c.Content, os.Getenv("BACKEND_URL"), os.Getenv("APP_URL"))
 
+	byts := []byte(c.Marshal())
+	byts = compressr.Compress(byts)
 	// cache
-
-	_ = cache.Set(hash, c.Marshal(), cache.OneDay)
+	_ = cache.Set(key, byts, cache.OneDay)
 	return ctx.HTML(http.StatusOK, c.Content)
 }

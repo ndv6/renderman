@@ -52,11 +52,6 @@ func (c *Content) Marshal() string {
 	return string(content)
 }
 
-func (c *Content) Compress() []byte {
-	str := c.Marshal()
-
-}
-
 // UnMarshal ...
 func (c *Content) UnMarshal(val []byte) {
 	err := json.Unmarshal(val, c)
