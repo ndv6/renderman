@@ -249,7 +249,15 @@ func (c *redishash) Has(key string) bool {
 		logrus.Errorf("redis error: %s\n", err.Error())
 		return false
 	}
-	return one == 1
+	if one != 1 {
+		return false
+	}
+	ttl, err := redis.Int64(c.exec("HGet", hname, ttlKey(key)))
+	if err != nil {
+		logrus.Errorf("redis error: %s\n", err.Error())
+		return false
+	}
+	return time.Now().Unix() < ttl
 }
 
 func (c *redishash) Set(key string, val interface{}, ttl time.Duration) error {
