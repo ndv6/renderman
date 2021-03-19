@@ -49,7 +49,6 @@ func (c *Content) Marshal() string {
 		logrus.Error(err)
 		return ""
 	}
-
 	return string(content)
 }
 
