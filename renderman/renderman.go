@@ -29,6 +29,11 @@ var skippedResource = []string{
 	"service-worker",
 }
 
+var skippedResourceType = map[network.ResourceType]interface{}{
+	network.ResourceTypeFont:  nil,
+	network.ResourceTypeImage: nil,
+}
+
 // Remote ...
 type Remote struct {
 	RemoteURL  string
@@ -141,15 +146,14 @@ func (rt *Remote) FetchHeadless(url string) (Content, error) {
 				for _, skip := range skippedResource {
 					if strings.Contains(ev.Request.URL, skip) {
 						fetch.FailRequest(ev.RequestID, network.ErrorReasonBlockedByClient).Do(ctx)
-						break
+						return
 					}
 				}
-
-				if ev.ResourceType == network.ResourceTypeImage {
+				if _, ok := skippedResourceType[ev.ResourceType]; ok {
 					fetch.FailRequest(ev.RequestID, network.ErrorReasonBlockedByClient).Do(ctx)
-				} else {
-					fetch.ContinueRequest(ev.RequestID).Do(ctx)
+					return
 				}
+				fetch.ContinueRequest(ev.RequestID).Do(ctx)
 			}
 		}()
 	})
