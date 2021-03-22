@@ -31,7 +31,7 @@ func main() {
 		}
 
 		cron.AddFunc(scheduler, func() {
-			logrus.Info("cront start at ", time.Now())
+			logrus.Info("cron start at ", time.Now())
 			collect(uri)
 		})
 
