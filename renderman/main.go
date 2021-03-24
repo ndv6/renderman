@@ -111,6 +111,7 @@ func fetchAndCacheHeadless(ctx echo.Context, uri string) error {
 	if ctx.Request().Header.Get("user-agent") == "collector-agent" || !cache.Has(key) {
 		c, err := fetchFromRemote(uri)
 		if err != nil {
+			logrus.Error(err)
 			return ctx.HTML(http.StatusInternalServerError, "")
 		}
 		storeToCache(key, c, cache.OneDay)
