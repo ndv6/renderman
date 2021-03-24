@@ -136,33 +136,14 @@ func (rt *Remote) FetchHeadless(url string) (Content, error) {
 	defer cancel()
 
 	// intercept
-	chromedp.ListenTarget(ctx, func(event interface{}) {
-		go func() {
-			switch ev := event.(type) {
-			case *fetch.EventRequestPaused:
-				c := chromedp.FromContext(ctx)
-				ctx := cdp.WithExecutor(ctx, c.Target)
-
-				for _, skip := range skippedResource {
-					if strings.Contains(ev.Request.URL, skip) {
-						fetch.FailRequest(ev.RequestID, network.ErrorReasonBlockedByClient).Do(ctx)
-						return
-					}
-				}
-				if _, ok := skippedResourceType[ev.ResourceType]; ok {
-					fetch.FailRequest(ev.RequestID, network.ErrorReasonBlockedByClient).Do(ctx)
-					return
-				}
-				fetch.ContinueRequest(ev.RequestID).Do(ctx)
-			}
-		}()
-	})
+	chromedp.ListenTarget(ctx, interceptAndWaitUntilLoaded(ctx, cancel))
 
 	err := chromedp.Run(ctx,
 		fetch.Enable(),
 		network.Enable(),
-		enableLifeCycleEvents(),
-		navigate(url),
+		page.Enable(),
+		page.SetLifecycleEventsEnabled(true),
+		chromedp.Navigate(url),
 		chromedp.Title(&title),
 		chromedp.OuterHTML("html", &content),
 	)
@@ -173,49 +154,36 @@ func (rt *Remote) FetchHeadless(url string) (Content, error) {
 	return Content{Title: title, Content: content}, nil
 }
 
-func enableLifeCycleEvents() chromedp.ActionFunc {
-	return func(ctx context.Context) error {
-		err := page.Enable().Do(ctx)
-		if err != nil {
-			return err
-		}
-		err = page.SetLifecycleEventsEnabled(true).Do(ctx)
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-}
-
-// Navigate is an action that navigates the current frame.
-func navigate(urlstr string) chromedp.NavigateAction {
-	return chromedp.ActionFunc(func(ctx context.Context) error {
-		_, _, _, err := page.Navigate(urlstr).Do(ctx)
-		if err != nil {
-			return err
-		}
-		return waitLoaded(ctx)
-	})
-}
-
-// waitLoaded blocks until a target receives a Page.loadEventFired.
-func waitLoaded(ctx context.Context) error {
-	ch := make(chan struct{})
-	lctx, cancel := context.WithCancel(ctx)
-	chromedp.ListenTarget(lctx, func(ev interface{}) {
-		switch e := ev.(type) {
+func interceptAndWaitUntilLoaded(ctx context.Context, cancelFn context.CancelFunc) func(ev interface{}) {
+	var frameID string
+	var init bool
+	return func(event interface{}) {
+		switch ev := event.(type) {
+		case *fetch.EventRequestPaused:
+			c := chromedp.FromContext(ctx)
+			ctx := cdp.WithExecutor(ctx, c.Target)
+			for _, skip := range skippedResource {
+				if strings.Contains(ev.Request.URL, skip) {
+					go fetch.FailRequest(ev.RequestID, network.ErrorReasonBlockedByClient).Do(ctx)
+					return
+				}
+			}
+			if _, ok := skippedResourceType[ev.ResourceType]; ok {
+				go fetch.FailRequest(ev.RequestID, network.ErrorReasonBlockedByClient).Do(ctx)
+				return
+			}
+			go fetch.ContinueRequest(ev.RequestID).Do(ctx)
+		case *page.EventFrameStartedLoading:
+			frameID = ev.FrameID.String()
 		case *page.EventLifecycleEvent:
-			if e.Name == "networkAlmostIdle" {
-				cancel()
-				close(ch)
+			switch ev.Name {
+			case "init":
+				init = ev.FrameID.String() == frameID
+			case "networkIdle":
+				if init && ev.FrameID.String() == frameID {
+					cancelFn()
+				}
 			}
 		}
-	})
-
-	select {
-	case <-ch:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
 	}
 }
