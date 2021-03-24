@@ -7,23 +7,20 @@ import (
 	"net/url"
 
 	"github.com/go-rod/rod/lib/launcher"
-	"github.com/go-rod/rod/lib/utils"
+	"github.com/sirupsen/logrus"
 )
 
 const flagKeepUserDataDir = "rod-keep-user-data-dir"
 
 // RemoteLauncher ...
 type RemoteLauncher struct {
-	Logger utils.Logger
-	l      *launcher.Launcher
-	rp     *httputil.ReverseProxy
+	l  *launcher.Launcher
+	rp *httputil.ReverseProxy
 }
 
 // NewRemoteLauncher instance
 func NewRemoteLauncher() *RemoteLauncher {
-	return &RemoteLauncher{
-		Logger: utils.LoggerQuiet,
-	}
+	return &RemoteLauncher{}
 }
 
 func (p *RemoteLauncher) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +36,10 @@ func (p *RemoteLauncher) setup() {
 	p.l = newLauncher()
 	u := p.l.Leakless(true).MustLaunch()
 	parsedURL, err := url.Parse(u)
-	utils.E(err)
+	if err != nil {
+		logrus.Panic(err)
+	}
+
 	p.rp = httputil.NewSingleHostReverseProxy(toHTTP(*parsedURL))
 }
 
@@ -47,7 +47,7 @@ func (p *RemoteLauncher) cleanup() {
 	if _, has := p.l.Get(flagKeepUserDataDir); !has {
 		p.l.Cleanup()
 		dir, _ := p.l.Get("user-data-dir")
-		p.Logger.Println("Removed", dir)
+		logrus.Info("Removed", dir)
 	}
 }
 
@@ -66,14 +66,19 @@ func newLauncher() *launcher.Launcher {
 }
 
 func (p *RemoteLauncher) defaults(w http.ResponseWriter, _ *http.Request) {
-	utils.E(w.Write(p.l.JSON()))
+	if _, err := w.Write(p.l.JSON()); err != nil {
+		logrus.Error(err)
+	}
+
 }
 
 func (p *RemoteLauncher) launch(w http.ResponseWriter, r *http.Request) {
 	options := r.Header.Get(launcher.HeaderName)
 	if options != "" {
 		p.l.Flags = nil
-		utils.E(json.Unmarshal([]byte(options), p.l))
+		if err := json.Unmarshal([]byte(options), p.l); err != nil {
+			logrus.Error(err)
+		}
 	}
 	p.rp.ServeHTTP(w, r)
 }
