@@ -17,7 +17,6 @@ COPY --from=go   /workspace/bin/chrome-launcher /workspace/chrome-launcher
 COPY --from=go   /workspace/bin/collector /workspace/collector
 COPY --from=go   /workspace/bin/renderman /workspace/renderman
 
-# COPY --from=dart /workspace/app /workspace/app
 COPY supervisord.conf /etc/supervisor/supervisord.conf
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY default.conf /etc/nginx/conf.d/default.conf.template

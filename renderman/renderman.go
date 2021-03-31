@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -148,6 +149,12 @@ func (rt *Remote) FetchHeadless(url string) (Content, error) {
 		chromedp.OuterHTML("html", &content),
 	)
 	if err != nil {
+		// kill chrome launcher if err occured
+		cmd := exec.Command("pkill", "-f", "/workspace/chrome-launcher")
+		if err := cmd.Run(); err != nil {
+			return Content{}, err
+		}
+
 		return Content{}, err
 	}
 
