@@ -72,7 +72,7 @@ func main() {
 
 	e.GET("*", httpHandler)
 
-	e.Logger.Fatal(e.Start(fmt.Sprintf(":%s", os.Getenv("PORT"))))
+	e.Logger.Fatal(e.Start(fmt.Sprintf(":%s", os.Getenv("APP_PORT"))))
 }
 
 func httpHandler(ctx echo.Context) error {
