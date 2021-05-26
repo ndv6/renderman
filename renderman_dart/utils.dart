@@ -16,7 +16,7 @@ class Content {
 
 bool isAssetRequest(String uri) {
   RegExp exp = new RegExp(
-      r"(.*(css|js|json|jpg|jpeg|gif|svg|png|css|mp4|ogg|svg|ttf|ico|map))");
+      r"(.*(js|css|xml|less|png|jpg|jpeg|gif|pdf|doc|txt|ico|rss|zip|mp3|rar|exe|wmv|doc|avi|ppt|mpg|mpeg|tif|wav|mov|psd|ai|xls|mp4|m4a|swf|dat|dmg|iso|flv|m4v|torrent|ttf|woff|svg|eot))");
 
   return exp.hasMatch(uri);
 }
