@@ -19,7 +19,7 @@ import (
 )
 
 var (
-	hc               *Remote
+	renderman        *Renderman
 	enableStaticFile = false
 	bot              = `googlebot|bingbot|adidxBot|yandex|baiduspider|twitterbot|facebookexternalhit|rogerbot|linkedinbot|embedly|quora link preview|showyoubot|outbrain|pinterest\/0\.|pinterestbot|slackbot|slack-imgproxy|vkshare|w3c_validator|whatsapp|collector-agent`
 	asset            = `\.(js|css|xml|less|png|jpg|jpeg|gif|pdf|doc|txt|ico|rss|zip|mp3|rar|exe|wmv|doc|avi|ppt|mpg|mpeg|tif|wav|mov|psd|ai|xls|mp4|m4a|swf|dat|dmg|iso|flv|m4v|torrent|ttf|woff|svg|eot)`
@@ -28,28 +28,22 @@ var (
 )
 
 func init() {
-	// Log as JSON instead of the default ASCII formatter.
 	logrus.SetFormatter(&logrus.JSONFormatter{})
-
-	// Output to stdout instead of the default stderr
-	// Can be any io.Writer, see below for File example
 	logrus.SetOutput(os.Stdout)
-
-	// Only log the warning severity or above.
-	logrus.SetLevel(logrus.WarnLevel)
 }
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
+	logrus.Info(runtime.GOOS)
+
 	_ = godotenv.Load()
 
 	// Echo instance
 	e := echo.New()
-	hc = &Remote{
-		RemoteURL:  os.Getenv("CHROMIUM_URL"),
-		BackendURL: os.Getenv("BACKEND_URL"),
-	}
+	renderman = newRenderman(os.Getenv("BACKEND_URL"), os.Getenv("CHROMIUM_URL"))
 	compressr = newZstdCompressor()
+
+	e.HideBanner = true
 
 	enableStaticFile = os.Getenv("ENABLE_STATIC_SERVE") != ""
 	hashName = strings.ReplaceAll(os.Getenv("APP_URL"), ":", "")
@@ -91,12 +85,12 @@ func httpHandler(ctx echo.Context) error {
 	if !matched {
 		return fetchAndCacheHeadless(ctx, uri)
 	}
-	hc.Proxy(ctx)
+	renderman.Proxy(ctx)
 	return nil
 }
 
 func fetchFromRemote(uri string) (c Content, err error) {
-	c, err = hc.FetchHeadless(uri)
+	c, err = renderman.FetchHeadless(uri)
 	if err != nil {
 		logrus.Error(err)
 		return
