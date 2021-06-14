@@ -56,7 +56,7 @@ func main() {
 	}
 
 	if !*quiet {
-		m.Logger = logrus.StandardLogger()
+		m.Logger = logrus.New()
 	}
 
 	if *allowAllPath {

@@ -28,13 +28,9 @@ RUN adduser -D renderman \
   && echo "http://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories \
   && echo "http://dl-cdn.alpinelinux.org/alpine/v3.12/main" >> /etc/apk/repositories \
   && apk upgrade -U -a \
-  && apk add --no-cache ca-certificates supervisor chromium tzdata nginx gettext libintl dumb-init busybox-suid dcron libcap \
+  && apk add --no-cache ca-certificates supervisor chromium tzdata nginx gettext libintl dumb-init \
   && ln -sf /dev/stdout /var/log/nginx/access.log \
   && ln -sf /dev/stderr /var/log/nginx/error.log \
-  && echo "renderman" >> /etc/cron.allow \
-  && rm -rf /etc/crontabs && mkdir -p /etc/crontabs && chown -R renderman:renderman /etc/crontabs \
-  && setcap cap_setgid=ep /usr/sbin/crond \
-  && chmod g+s /usr/bin/crontab \
   && rm -rf /var/cache/* \
   && mkdir /var/cache/apk
 
@@ -50,9 +46,7 @@ RUN  mkdir -p /var/run/supervisor \
   && chown -R renderman:renderman /var/run/nginx \
   && chown -R renderman:renderman /var/lib/nginx \
   && chown -R renderman:renderman /var/log/nginx \
-  && chown -R renderman:renderman /etc/nginx \
-  && chown renderman:renderman /usr/sbin/crond \
-  && chown renderman:renderman /usr/bin/crontab
+  && chown -R renderman:renderman /etc/nginx
 
 USER renderman
 EXPOSE 8082 9090
