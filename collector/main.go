@@ -2,74 +2,44 @@ package main
 
 import (
 	"os"
-	"os/signal"
 	"runtime"
 	"time"
 
 	"github.com/gocolly/colly/v2"
 	"github.com/joho/godotenv"
-	"github.com/robfig/cron/v3"
 	"github.com/sirupsen/logrus"
 )
 
 func init() {
-	// Log as JSON instead of the default ASCII formatter.
 	logrus.SetFormatter(&logrus.JSONFormatter{})
-
-	// Output to stdout instead of the default stderr
-	// Can be any io.Writer, see below for File example
 	logrus.SetOutput(os.Stdout)
-
-	// Only log the warning severity or above.
-	logrus.SetLevel(logrus.WarnLevel)
 }
 
 func main() {
-	// delay collector before main app start
-	time.Sleep(2 * time.Minute)
-
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	godotenv.Load()
 	uri := os.Getenv("APP_URL")
 
-	if os.Getenv("COLLECTOR_ENABLE") == "true" {
-		cron := cron.New()
-
-		logrus.Info("collector agent is enabled")
-
-		scheduler := os.Getenv("COLLECTOR_SCHEDULER")
-		if scheduler == "" {
-			scheduler = "0 */6 * * *"
-		}
-
-		cron.AddFunc(scheduler, func() {
-			logrus.Info("cron start at ", time.Now())
-			collect(uri)
+	if os.Getenv("COLLECTOR_ENABLE") != "" {
+		logrus.Info("collector initialized")
+		c := colly.NewCollector(colly.UserAgent("collector-agent"))
+		c.Limit(&colly.LimitRule{
+			Parallelism: 1,
 		})
 
-		collect(uri)
-		go func() {
-			logrus.Info("start cron scheduler")
-			cron.Start()
-		}()
+		logrus.Infof("started collect")
+		c.OnHTML("a[href]", func(e *colly.HTMLElement) {
+			time.Sleep(30 * time.Millisecond)
+			e.Request.Visit(e.Attr("href"))
+		})
+		c.OnRequest(func(r *colly.Request) {
+			logrus.Info("collector:", r.URL)
+		})
 
-		sig := make(chan os.Signal)
-		signal.Notify(sig, os.Interrupt, os.Kill)
-		<-sig
-
+		c.Visit(uri)
+		c.Wait()
+		logrus.Info("completed collect")
 	} else {
-		logrus.Info("collector agent is disabled")
+		logrus.Info("collector is disabled")
 	}
-}
-
-func collect(uri string) {
-	c := colly.NewCollector(colly.UserAgent("collector-agent"))
-	c.OnHTML("a[href]", func(e *colly.HTMLElement) {
-		e.Request.Visit(e.Attr("href"))
-	})
-	c.OnRequest(func(r *colly.Request) {
-		logrus.Info("collector:", r.URL)
-	})
-
-	c.Visit(uri)
 }

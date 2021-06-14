@@ -1,41 +1,60 @@
 FROM golang:alpine as go
-WORKDIR /workspace
-COPY go* /workspace/
-COPY remote    /workspace/remote
-COPY collector /workspace/collector
-COPY renderman /workspace/renderman
-RUN go build -o /workspace/bin/chrome-launcher ./remote
-RUN go build -o /workspace/bin/collector ./collector
-RUN go build -o /workspace/bin/renderman ./renderman
+WORKDIR /home/renderman
+ENV GOPATH=/home/renderman/go
 
-FROM alpine
-RUN apk add --no-cache supervisor chromium tzdata nginx gettext libintl dumb-init
+COPY go.* /home/renderman/
+COPY collector /home/renderman/collector
+COPY remote /home/renderman/remote
+COPY renderman /home/renderman/renderman
 
-WORKDIR /workspace
+RUN mkdir -p ${GOPATH} \
+    && go build -o /home/renderman/bin/collector ./collector \
+    && go build -o /home/renderman/bin/remote    ./remote \
+    && go build -o /home/renderman/bin/renderman ./renderman
 
-COPY --from=go   /workspace/bin/chrome-launcher /workspace/chrome-launcher
-COPY --from=go   /workspace/bin/collector /workspace/collector
-COPY --from=go   /workspace/bin/renderman /workspace/renderman
+FROM alpine:3.13
 
-COPY supervisord.conf /etc/supervisor/supervisord.conf
-COPY nginx.conf /etc/nginx/nginx.conf
-COPY default.conf /etc/nginx/conf.d/default.conf.template
+ENV HOME /home/renderman
+ENV COLLECTOR_SCHEDULER "*/10 * * * *"
+WORKDIR /home/renderman
 
-RUN mkdir /var/run/supervisor && mkdir /var/run/nginx \
-    && mkdir -p /var/log/nginx \
-    && adduser -D renderman \
-    && chown -R renderman:renderman /workspace \
-    && chown -R renderman:renderman /var/run/supervisor \
-    && chown -R renderman:renderman /var/run/nginx \
-    && chown -R renderman:renderman /var/lib/nginx \
-    && chown -R renderman:renderman /var/log/nginx \
-    && chown -R renderman:renderman /etc/nginx/conf.d/default.conf
+COPY --from=go   /home/renderman/bin/collector      /home/renderman/collector
+COPY --from=go   /home/renderman/bin/remote         /home/renderman/remote
+COPY --from=go   /home/renderman/bin/renderman      /home/renderman/renderman
 
-# forward request and error logs to docker log collector
-RUN ln -sf /dev/stdout /var/log/nginx/access.log \
-    && ln -sf /dev/stderr /var/log/nginx/error.log
+RUN adduser -D renderman \
+  && echo "http://dl-cdn.alpinelinux.org/alpine/edge/main" > /etc/apk/repositories \
+  && echo "http://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories \
+  && echo "http://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories \
+  && echo "http://dl-cdn.alpinelinux.org/alpine/v3.12/main" >> /etc/apk/repositories \
+  && apk upgrade -U -a \
+  && apk add --no-cache ca-certificates supervisor chromium tzdata nginx gettext libintl dumb-init busybox-suid dcron libcap \
+  && ln -sf /dev/stdout /var/log/nginx/access.log \
+  && ln -sf /dev/stderr /var/log/nginx/error.log \
+  && echo "renderman" >> /etc/cron.allow \
+  && rm -rf /etc/crontabs && mkdir -p /etc/crontabs && chown -R renderman:renderman /etc/crontabs \
+  && setcap cap_setgid=ep /usr/sbin/crond \
+  && chmod g+s /usr/bin/crontab \
+  && rm -rf /var/cache/* \
+  && mkdir /var/cache/apk
+
+COPY crontab.txt      /home/renderman/crontab.txt
+COPY supervisord.conf /home/renderman/supervisord.conf
+COPY local.conf       /etc/fonts/local.conf
+COPY nginx.conf       /etc/nginx/nginx.conf
+COPY default.conf     /etc/nginx/conf.d/default.conf.template
+
+RUN  mkdir -p /var/run/supervisor \
+  && mkdir -p /var/run/nginx \
+  && chown -R renderman:renderman /var/run/supervisor \
+  && chown -R renderman:renderman /var/run/nginx \
+  && chown -R renderman:renderman /var/lib/nginx \
+  && chown -R renderman:renderman /var/log/nginx \
+  && chown -R renderman:renderman /etc/nginx \
+  && chown renderman:renderman /usr/sbin/crond \
+  && chown renderman:renderman /usr/bin/crontab
 
 USER renderman
-EXPOSE 8081 9090 9222
+EXPOSE 8082 9090
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
+CMD ["/usr/bin/supervisord", "-c", "/home/renderman/supervisord.conf"]
