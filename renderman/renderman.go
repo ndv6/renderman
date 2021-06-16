@@ -6,6 +6,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -38,44 +39,55 @@ var xhrAllowRequests = map[proto.NetworkResourceType]interface{}{
 
 // Remote ...
 type Renderman struct {
+	*sync.RWMutex
 	browser    *rod.Browser
 	remoteUrl  string
 	backendURL string
 }
 
 func newRenderman(backendUrl, remoteUrl string) *Renderman {
-	renderman := &Renderman{backendURL: backendUrl, remoteUrl: remoteUrl}
-	renderman.browser = renderman.GetBrowser()
+	renderman := &Renderman{backendURL: backendUrl, remoteUrl: remoteUrl, RWMutex: &sync.RWMutex{}}
+	renderman.InitBrowser()
 
 	return renderman
 }
 
 func (renderman *Renderman) GetBrowser() *rod.Browser {
-	if renderman.browser == nil {
-		var l *launcher.Launcher
-		if renderman.remoteUrl == "" {
-			path, _ := launcher.LookPath()
-			logrus.Info("chrome path :", path)
-
-			l = launcher.New().Bin(path)
-
-			l.Set("disable-web-security")
-			l.Set("no-sandbox")
-			l.Set("disable-setuid-sandbox")
-			l.Set("disable-dev-shm-usage")
-			l.Set("disable-accelerated-2d-canvas")
-			l.Set("disable-gpu")
-			l.Set("disable-notifications")
-			l.Set("rod-keep-user-data-dir")
-			// renderman.browser = rod.New().ControlURL(l.MustLaunch()).MustConnect()
-		} else {
-			// u := launcher.MustResolveURL(renderman.remoteUrl)
-			l = launcher.MustNewManaged(renderman.remoteUrl)
-		}
-		renderman.browser = rod.New().ControlURL(l.MustLaunch()).MustConnect()
-	}
-
+	renderman.RLock()
+	defer renderman.RUnlock()
 	return renderman.browser
+}
+
+func (renderman *Renderman) InitBrowser() {
+	renderman.Lock()
+	defer renderman.Unlock()
+	var l *launcher.Launcher
+	if renderman.remoteUrl == "" {
+		path, _ := launcher.LookPath()
+		logrus.Info("chrome path :", path)
+
+		l = launcher.New().Bin(path)
+
+		l.Set("disable-web-security")
+		l.Set("no-sandbox")
+		l.Set("disable-setuid-sandbox")
+		l.Set("disable-dev-shm-usage")
+		l.Set("disable-accelerated-2d-canvas")
+		l.Set("disable-gpu")
+		l.Set("disable-notifications")
+		l.Set("rod-keep-user-data-dir")
+		// renderman.browser = rod.New().ControlURL(l.MustLaunch()).MustConnect()
+	} else {
+		// u := launcher.MustResolveURL(renderman.remoteUrl)
+		l = launcher.MustNewManaged(renderman.remoteUrl)
+	}
+	renderman.browser = rod.New().ControlURL(l.MustLaunch()).MustConnect()
+}
+
+func (renderman *Renderman) CloseBrowser() {
+	renderman.Lock()
+	defer renderman.Unlock()
+	renderman.browser.Close()
 }
 
 // Proxy is for serve as proxy
@@ -121,7 +133,7 @@ func (renderman *Renderman) FetchHeadless(url string) (Content, error) {
 	browser := renderman.GetBrowser()
 	page, err := browser.Page(proto.TargetCreateTarget{URL: ""})
 	if err != nil {
-		renderman.browser = nil
+		renderman.InitBrowser()
 		return Content{}, err
 	}
 
@@ -164,8 +176,8 @@ func (renderman *Renderman) FetchHeadless(url string) (Content, error) {
 	// wait := page.MustWaitRequestIdle()
 	wait := page.WaitRequestIdle(1*time.Second, nil, []string{})
 	if err := page.Navigate(url); err != nil {
-		_ = renderman.browser.Close()
-		renderman.browser = nil
+		renderman.CloseBrowser()
+		renderman.InitBrowser()
 
 		logrus.Error("unable to navigate page ", err)
 		return Content{}, err
@@ -174,8 +186,8 @@ func (renderman *Renderman) FetchHeadless(url string) (Content, error) {
 
 	html, err := page.MustElement("html").HTML()
 	if err != nil {
-		_ = renderman.browser.Close()
-		renderman.browser = nil
+		renderman.CloseBrowser()
+		renderman.InitBrowser()
 
 		logrus.Error("unable to get page ", err)
 		return Content{}, err
